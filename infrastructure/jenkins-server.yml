@@ -1,0 +1,105 @@
+Description: This template creates a VPC, Internet Gateway, Security Group and an EC2 instance with Jenkins installed in it.
+
+Parameters:
+    EnvironmentName:
+        Description: This name will be prefixed to all the resources.
+        Type: String
+    VpcID:
+        Description: VPC id
+        Type: String
+        Default: vpc-0080bdb48bf43cab6
+    PublicSubnetID:
+        Description: public subnet id
+        Type: String
+        Default: subnet-086887fd21de4991a
+    ServerAMIId:
+        Description: AMI ID for EC2 instances.
+        Type: String
+    InstanceType:
+        Description: EC2 instance type
+        Type: String
+
+Resources:
+    ## Security Group ##
+
+    # Security Group for Jenkins Server
+    JenkinsServerSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties:
+            GroupDescription: Allow http to our hosts and SSH from local only
+            VpcId: !Ref VpcID
+            SecurityGroupIngress: #Allowing inbound traffic on port 80 for accessing application and on port 22 for SSH in case of troubleshooting any issues.
+                - IpProtocol: tcp
+                  FromPort: 8080
+                  ToPort: 8080
+                  CidrIp: 0.0.0.0/0
+                - IpProtocol: tcp
+                  FromPort: 22
+                  ToPort: 22
+                  CidrIp: 0.0.0.0/0
+            SecurityGroupEgress: # Allowing outbound traffic on all ports so that updates or patches can be downloaded.
+                - IpProtocol: tcp
+                  FromPort: 0
+                  ToPort: 65535
+                  CidrIp: 0.0.0.0/0
+
+    ## Launch Configuration ##
+
+    # Launch configuration that will be used when server will spin up.
+    JenkinsServerLaunchConfig:
+        Type: AWS::AutoScaling::LaunchConfiguration
+        Properties:
+            UserData:
+                Fn::Base64: !Sub |
+                    #!/bin/bash
+                    # Install Jenkins
+                    sudo yum update –y
+                    sudo wget -O /etc/yum.repos.d/jenkins.repo \
+                    https://pkg.jenkins.io/redhat-stable/jenkins.repo
+                    sudo rpm --import https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+                    sudo yum upgrade
+                    sudo dnf install java-11-amazon-corretto -y
+                    sudo yum install jenkins -y
+                    sudo systemctl enable jenkins
+                    # Install Docker
+                    sudo yum install -y docker
+                    # Install AWS CLI version 2
+                    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+                    unzip /tmp/awscliv2.zip
+                    ./aws/install -i /usr/local/aws-cli -b /usr/bin
+                    # Install eksctl CLI
+                    sudo curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+                    sudo mv /tmp/eksctl /usr/local/bin
+                    # Install kubectl CLI
+                    sudo curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+                    sudo chmod +x ./kubectl
+                    sudo mv ./kubectl /usr/local/bin/kubectl
+                    # Install Tidy
+                    sudo update -y
+                    sudo install -y tidy
+                    # Add jenkins user tp docker group
+                    sudo usermod -aG docker jenkins
+                    # Restart Jenkins
+                    sudo systemctl restart jenkins
+            ImageId: !Ref ServerAMIId
+            SecurityGroups:
+                - Ref: JenkinsServerSecurityGroup
+            InstanceType: !Ref InstanceType
+            KeyName: udacity-capstone
+            BlockDeviceMappings:
+                - DeviceName: /dev/sda1
+                  Ebs:
+                      VolumeSize: '10'
+                      VolumeType: gp3
+    ## Auto Scaling Group ##
+
+    # Auto scaling group for Udagram App
+    JenkinsGroup:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties:
+            VPCZoneIdentifier:
+                - !Ref PublicSubnetID
+            LaunchConfigurationName:
+                Ref: JenkinsServerLaunchConfig
+            MinSize: "1"
+            MaxSize: "1"
