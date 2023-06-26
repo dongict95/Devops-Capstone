@@ -76,7 +76,7 @@ Resources:
                     sudo mv ./kubectl /usr/local/bin/kubectl
                     # Install Tidy
                     sudo update -y
-                    sudo install -y tidy
+                    sudo yum install -y tidy
                     # Add jenkins user tp docker group
                     sudo usermod -aG docker jenkins
                     # Restart Jenkins
