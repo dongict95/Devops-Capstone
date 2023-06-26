@@ -86,5 +86,26 @@ pipeline {
 			}
 		}
 
+		stage('List pods') {
+			steps {
+				withAWS(region:'us-east-1', credentials:'aws_credentials') {
+					sh '''
+						kubectl get rc
+						kubectl get pods
+					'''
+				}
+			}
+		}
+
+		stage('Describe services') {
+			steps {
+				withAWS(region:'us-east-1', credentials:'aws_credentials') {
+					sh '''
+						kubectl describe svc bluegreenlb
+					'''
+				}
+			}
+		}
+
 	}
 }
